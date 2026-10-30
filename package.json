@@ -1,0 +1,12 @@
+{
+  "name": "tosstome-workspace",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "pretest": "npm run prepare --prefix cli",
+    "test": "node tests/integration.mjs && node tests/rtc_node.mjs && node tests/mcp.mjs"
+  },
+  "devDependencies": {
+    "node-datachannel": "0.33.6"
+  }
+}

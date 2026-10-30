@@ -1,0 +1,17 @@
+# Example: put this behind a reverse proxy that terminates TLS and sets X-Real-IP, then point the CLI at it
+# with `tosstome listen --server https://your.domain`.
+services:
+  tosstome:
+    image: tosstome/tosstome:latest
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      # The header your reverse proxy overwrites with the client address. Leave unset if the server is
+      # only reachable from one network; every device then shows up in the same Nearby list.
+      CLIENT_IP_HEADER: X-Real-IP
+    volumes:
+      - tosstome-data:/data
+
+volumes:
+  tosstome-data:

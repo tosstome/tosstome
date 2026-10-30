@@ -1,0 +1,10 @@
+node_modules/
+.wrangler/
+*.part
+.playwright-mcp/
+.env*
+.dev.vars*
+.DS_Store
+*.log
+# copied from shared/ by `npm install` in cli/
+cli/shared/

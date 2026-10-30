@@ -1,0 +1,34 @@
+{
+  "name": "tosstome",
+  "version": "0.0.1",
+  "description": "Keep an always-on inbox on your computer and toss files to it from any browser.",
+  "homepage": "https://toss2.me",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tosstome/tosstome.git",
+    "directory": "cli"
+  },
+  "bugs": "https://github.com/tosstome/tosstome/issues",
+  "type": "module",
+  "bin": {
+    "tosstome": "bin/tosstome.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "shared"
+  ],
+  "scripts": {
+    "prepare": "node -e \"const fs=require('fs');fs.rmSync('shared',{recursive:true,force:true});fs.cpSync('../shared','shared',{recursive:true})\""
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "qrcode-terminal": "0.12.0"
+  },
+  "optionalDependencies": {
+    "node-datachannel": "0.33.6"
+  }
+}
