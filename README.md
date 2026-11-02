@@ -19,15 +19,16 @@ Status: **M0 prototype**. Running at https://toss2.me, which is also the CLI def
 - `server/`: the Cloudflare Worker and its Durable Objects. AGPL-3.0.
 - `cli/`: the `tosstome` command line tool and MCP server. MIT. `npm install` in `cli/` copies `shared/` into `cli/shared/` so the published package is self-contained; run `npm run prepare --prefix cli` (or `npm test`, which does it first) after editing `shared/`.
 - `shared/`: the transfer protocol, WebRTC and device-name code used by the CLI and by browser clients. MIT.
+- `web/`: a plain browser client (static HTML, CSS and ES modules, no build tool) with every feature of the site: Nearby, codes, files and text messages both ways, and the inbox send page at `/i`. `web/build.mjs` copies `shared/` into `web/shared/`; wrangler runs it before `dev` and `deploy`, and the Dockerfile runs it too. Includes [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator) (MIT) in `web/vendor/`.
 - `tests/`: end-to-end tests against a running server.
 
-The toss2.me website (the browser app and content pages) is not part of this repository. The server here is the API it talks to; any client that uses `shared/` can talk to it the same way.
+The toss2.me website (its own design, guides and translations) is not part of this repository, but `web/` does everything the site's app does, so a self-hosted server is usable from a browser out of the box. Any client that uses `shared/` can talk to the server the same way.
 
 ## Run locally
 
 ```sh
 npm install                                     # test dependencies
-cd server && npm install && npx wrangler dev --port 8787
+cd server && npm install && npx wrangler dev --port 8787   # API and browser client at http://127.0.0.1:8787
 cd cli && npm install
 node cli/bin/tosstome.js listen --server http://127.0.0.1:8787
 ```
@@ -40,7 +41,7 @@ node cli/bin/tosstome.js listen --server http://127.0.0.1:8787
 cd server && npx wrangler deploy   # uses wrangler's own login
 ```
 
-This deploys the API only. To serve your own web client from the same Worker, add an `assets` block with `"binding": "ASSETS"` to `server/wrangler.jsonc`; every path outside `/api/` is then handed to it.
+This deploys the API and the browser client in `web/`: every path outside `/api/` is served from it. To serve a different client, point the `assets` block in `server/wrangler.jsonc` at its directory.
 
 Uses only Workers and SQLite-backed Durable Objects, so the Workers Free plan is enough to try it. Workers do not charge for egress; relayed transfers are billed as Durable Object duration while the relay is active.
 
@@ -50,7 +51,7 @@ Uses only Workers and SQLite-backed Durable Objects, so the Workers Free plan is
 docker run -d -p 8080:8080 -v tosstome-data:/data tosstome/tosstome
 ```
 
-The image runs the same Worker code in [workerd](https://github.com/cloudflare/workerd), Cloudflare's open source Workers runtime, with Durable Objects kept as SQLite files in `/data` (only inbox key hashes are stored there; files never are). It listens on plain HTTP port 8080, so put a reverse proxy with TLS in front of it for use over the internet. See `docker-compose.yml`.
+The image runs the same Worker code in [workerd](https://github.com/cloudflare/workerd), Cloudflare's open source Workers runtime, with Durable Objects kept as SQLite files in `/data` (only inbox key hashes are stored there; files never are). It serves the browser client from `web/` at `/`, and inbox links open its `/i` page. It listens on plain HTTP port 8080, so put a reverse proxy with TLS in front of it for use over the internet. See `docker-compose.yml`.
 
 Nearby grouping needs the client address, which workerd does not see. Set `CLIENT_IP_HEADER` to the header your reverse proxy overwrites with it (for example `X-Real-IP`, or `X-Forwarded-For`, of which the last entry is used). Never set it to a header the proxy passes through from clients, or anyone could join another network's Nearby list. Without it, every device lands in one group, which is fine for a server reachable from only one network.
 
@@ -61,7 +62,7 @@ Build it yourself with `docker build -t tosstome .`. The `docker` GitHub Actions
 ```
 browser / CLI
    | WebSocket
-Worker on Cloudflare or workerd in Docker (/api routing, optional static assets)
+Worker on Cloudflare or workerd in Docker (/api routing, web/ as static assets)
    |-- Room DO    presence + WebRTC signaling (one per network or code)
    |-- Relay DO   blind byte relay, a fixed pool of 8 shared objects so concurrent transfers share duration billing
    `-- Inbox DO   one per inbox: key check, hands sender and agent a relay session

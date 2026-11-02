@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>tosstome</title>
+    <meta name="description" content="Send files and messages between devices from the browser." />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header class="bar">
+      <strong class="brand">tosstome</strong>
+      <span class="me">you are <b id="me"></b></span>
+    </header>
+
+    <main>
+      <section aria-labelledby="nearby-title">
+        <h2 id="nearby-title">Same network</h2>
+        <ul id="peers" class="peers"></ul>
+        <div id="empty" class="empty">
+          <div id="qr-here" class="qr"></div>
+          <p>Open this page on another device on the same network and it shows up here. Scan the code to open it on a phone.</p>
+        </div>
+      </section>
+
+      <section aria-labelledby="code-title">
+        <h2 id="code-title">Different network</h2>
+        <div class="row">
+          <button id="create-code" type="button">New code</button>
+          <form id="join-form" class="row">
+            <input id="join-code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]*" maxlength="6" placeholder="000000" aria-label="Code from the other device" />
+            <button type="submit">Join</button>
+          </form>
+        </div>
+        <div id="code-box" class="code-box" hidden>
+          <div>
+            <p id="code-label" class="muted"></p>
+            <p id="code-display" class="code"></p>
+            <button id="code-copy" type="button">Copy link</button>
+          </div>
+          <div id="qr-code" class="qr"></div>
+        </div>
+        <ul id="code-peers" class="peers" hidden></ul>
+      </section>
+
+      <section id="transfers-section" aria-labelledby="transfers-title" hidden>
+        <h2 id="transfers-title">Transfers</h2>
+        <ul id="transfers" class="transfers"></ul>
+      </section>
+
+      <p class="muted foot">Select a device to send files or a message, or drop files on it. Transfers go device to device over WebRTC when possible, otherwise through a relay that keeps nothing.</p>
+    </main>
+
+    <div id="drop-overlay" class="overlay" hidden><p></p></div>
+
+    <dialog id="compose">
+      <form id="compose-form" method="dialog">
+        <h3 id="compose-title"></h3>
+        <button id="compose-files" type="button" class="primary wide">Choose files</button>
+        <label for="compose-text" class="muted">or send a message</label>
+        <textarea id="compose-text" rows="4" maxlength="100000" placeholder="Text or a link"></textarea>
+        <div class="actions">
+          <button id="compose-cancel" type="button">Cancel</button>
+          <button type="submit">Send message</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="incoming">
+      <form method="dialog">
+        <h3 id="incoming-title"></h3>
+        <ul id="incoming-files" class="files"></ul>
+        <p id="incoming-total" class="muted"></p>
+        <div class="actions">
+          <button value="decline">Decline</button>
+          <button value="accept" class="primary">Accept</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

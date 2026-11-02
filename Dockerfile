@@ -1,10 +1,13 @@
 # syntax=docker/dockerfile:1
 
-# Bundles server/ into one ES module, exactly as `wrangler deploy` would upload it.
+# Bundles server/ into one ES module, exactly as `wrangler deploy` would upload it. Its build step also copies
+# shared/ into web/shared/, so the final stage takes the browser client from here.
 FROM --platform=$BUILDPLATFORM node:22-bookworm-slim AS bundle
 WORKDIR /src/server
 COPY server/package.json server/package-lock.json ./
 RUN npm ci --no-audit --no-fund
+COPY shared/ /src/shared/
+COPY web/ /src/web/
 COPY server/ ./
 RUN npx wrangler deploy --dry-run --outdir /out
 
@@ -23,7 +26,9 @@ FROM gcr.io/distroless/cc-debian12:nonroot
 COPY --from=workerd /workerd /usr/local/bin/workerd
 COPY --from=workerd --chown=nonroot:nonroot /data /data
 COPY docker/tosstome.capnp /etc/tosstome/config.capnp
+COPY docker/assets.js /etc/tosstome/assets.js
 COPY --from=bundle /out/index.js /etc/tosstome/index.js
+COPY --from=bundle /src/web/ /etc/tosstome/web/
 VOLUME /data
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/workerd", "serve", "--experimental", "/etc/tosstome/config.capnp"]

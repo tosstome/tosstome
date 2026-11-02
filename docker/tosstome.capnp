@@ -1,11 +1,14 @@
 # workerd config for the Docker image: the same Worker as on Cloudflare, with Durable Objects
-# stored as SQLite files under /data. index.js is the bundle built from server/ by the Dockerfile.
+# stored as SQLite files under /data. index.js is the bundle built from server/ by the Dockerfile, and the
+# browser client from web/ (with shared/ copied into it) is served from /etc/tosstome/web.
 using Workerd = import "/workerd/workerd.capnp";
 
 const config :Workerd.Config = (
   services = [
     (name = "main", worker = .worker),
     (name = "data", disk = (path = "/data", writable = true)),
+    (name = "assets", worker = .assets),
+    (name = "web", disk = (path = "/etc/tosstome/web")),
   ],
   sockets = [(name = "http", address = "*:8080", http = (), service = "main")],
 );
@@ -25,5 +28,12 @@ const worker :Workerd.Worker = (
     (name = "RELAY", durableObjectNamespace = (className = "Relay")),
     (name = "INBOX", durableObjectNamespace = (className = "Inbox")),
     (name = "CLIENT_IP_HEADER", fromEnvironment = "CLIENT_IP_HEADER"),
+    (name = "ASSETS", service = "assets"),
   ],
+);
+
+const assets :Workerd.Worker = (
+  modules = [(name = "assets.js", esModule = embed "assets.js")],
+  compatibilityDate = "2026-10-01",
+  bindings = [(name = "FILES", service = "web")],
 );

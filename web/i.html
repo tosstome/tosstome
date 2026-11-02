@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Send to inbox - tosstome</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header class="bar">
+      <a class="brand" href="/">tosstome</a>
+      <span class="me">inbox</span>
+    </header>
+
+    <main>
+      <section aria-labelledby="inbox-title">
+        <h2 id="inbox-title">Send to a computer's inbox</h2>
+        <p class="muted">Files and messages go straight to the folder that <code>tosstome listen</code> saves to.</p>
+        <label id="drop" class="drop">
+          <input id="files" type="file" multiple hidden />
+          <span>Choose files, or drop them here</span>
+        </label>
+        <ul id="chosen" class="files"></ul>
+        <textarea id="message" rows="4" maxlength="100000" placeholder="Or type a message" aria-label="Message"></textarea>
+        <button id="send" type="button" class="primary wide" disabled>Send</button>
+        <progress id="progress" max="1" value="0" hidden></progress>
+        <p id="status" class="status" role="status"></p>
+      </section>
+    </main>
+
+    <script type="module" src="/inbox.js"></script>
+  </body>
+</html>

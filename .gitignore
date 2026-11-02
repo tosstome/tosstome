@@ -8,3 +8,5 @@ node_modules/
 *.log
 # copied from shared/ by `npm install` in cli/
 cli/shared/
+# copied from shared/ by web/build.mjs
+web/shared/

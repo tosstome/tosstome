@@ -4,7 +4,10 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-10-01",
   "workers_dev": true,
-  // The API only. To serve a website from the same Worker, add an "assets" block with "binding": "ASSETS".
+  // The browser client in web/ is served for every path outside /api/. It imports shared/, which the build step
+  // copies into web/shared/ before every `wrangler dev` and `wrangler deploy`.
+  "build": { "command": "node ../web/build.mjs" },
+  "assets": { "directory": "../web", "binding": "ASSETS" },
   "durable_objects": {
     "bindings": [
       { "name": "ROOM", "class_name": "Room" },
