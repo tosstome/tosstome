@@ -61,6 +61,8 @@ function connect({ initiator, send, subscribe, timeoutMs = 8000, signal }) {
       }
     });
     pc.addEventListener("icecandidate", (e) => e.candidate && send({ kind: "ice", candidate: e.candidate.toJSON() }));
+    // ICE gave up (no usable path, e.g. no hairpin NAT and no shared LAN): fall back now, not at the timeout.
+    pc.addEventListener("connectionstatechange", () => pc.connectionState === "failed" && fail(new Error("direct connection failed")));
 
     if (initiator) {
       adopt(pc.createDataChannel("tosstome", { ordered: true }));

@@ -11,6 +11,10 @@ import { diskSink, fileEvent } from "./files.js";
 // Room signals (data field of {t:"signal"}), shared with the web app:
 //   ask {xfer, files, from} -> accept {xfer, rtc} -> offer/answer/ice {xfer, ...} (direct) or relay {xfer, sid}
 // rtc: true tells the browser this agent takes direct connections; without it browsers go to the relay.
+const PING = '{"t":"ping"}';
+const HEARTBEAT_MS = 15000;
+const DEAD_MS = 40000;
+
 export async function joinNearby(server, { dir, name = `${hostname()} (tosstome)`, onEvent = () => {}, signal } = {}) {
   const id = randomHex(8);
   const nearbyDir = join(dir, "nearby");
@@ -28,9 +32,18 @@ export async function joinNearby(server, { dir, name = `${hostname()} (tosstome)
       signal?.addEventListener("abort", () => ch.close(), { once: true });
       onEvent({ type: "nearby-ready", name });
       delay = 1000;
+      // The room answers PING itself and prunes sockets that stop pinging; a socket that stops answering is dead.
+      let lastSeen = Date.now();
+      ch.send(PING);
+      const heartbeat = setInterval(() => {
+        if (Date.now() - lastSeen > DEAD_MS) ch.close();
+        else ch.send(PING);
+      }, HEARTBEAT_MS);
+      ws.addEventListener("close", () => clearInterval(heartbeat), { once: true });
       for (;;) {
         const m = await ch.next();
         if (m === null) break;
+        lastSeen = Date.now();
         if (m.t !== "signal" || !m.data) continue;
         const d = m.data;
         if (typeof d.xfer !== "string") continue;
@@ -47,6 +60,7 @@ export async function joinNearby(server, { dir, name = `${hostname()} (tosstome)
           for (const fn of asks.get(d.xfer).fns) fn(d);
         }
       }
+      clearInterval(heartbeat);
     } catch (e) {
       onEvent({ type: "error", message: e.message });
     }

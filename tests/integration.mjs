@@ -192,6 +192,13 @@ const closedWith = (ws) => new Promise((r) => ws.addEventListener("close", (e) =
     if (m?.t === "signal") sig = m;
   }
   check("room forwards a signal to the named peer", sig?.from === idA && sig.data?.kind === "ping");
+  a.raw.send('{"t":"ping"}');
+  let pong = null;
+  for (let i = 0; i < 5 && !pong; i++) {
+    const m = await a.next();
+    if (m?.t === "pong") pong = m;
+  }
+  check("room answers the heartbeat ping", !!pong);
   a.close(); b.close();
 }
 

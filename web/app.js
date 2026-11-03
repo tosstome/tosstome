@@ -8,7 +8,7 @@ import { $, copyText, el, linkify, plural, qrSvg, size, splitName } from "./ui.j
 //   then either offer/answer/ice {xfer, ...} (direct) or relay {xfer, sid} (fallback)
 // A CLI agent's accept carries rtc: true when it takes direct connections; older agents only use the relay.
 
-const me = { id: randomHex(8), name: deviceName() };
+const me = { id: tabId(), name: deviceName() };
 const rooms = new Map(); // key ("ip" or "code:123456") -> {ch, peers, left}
 const listeners = new Map(); // xfer -> Set(fn)
 const rows = new Map(); // peer id -> its row in a device list
@@ -22,7 +22,11 @@ const shortName = (full) => splitName(String(full || "someone").slice(0, 40)).na
 function onXfer(xfer, fn) {
   if (!listeners.has(xfer)) listeners.set(xfer, new Set());
   listeners.get(xfer).add(fn);
-  return () => listeners.get(xfer)?.delete(fn);
+  return () => {
+    const set = listeners.get(xfer);
+    set?.delete(fn);
+    if (set?.size === 0) listeners.delete(xfer);
+  };
 }
 
 function waitFor(xfer, match, ms) {
@@ -40,17 +44,46 @@ function waitFor(xfer, match, ms) {
   });
 }
 
+// Messages up to this many JSON characters travel inside the ask signal (the room caps a signal at 64 KB).
+const INLINE_MAX = 32000;
+
+// Room heartbeat, answered by the server without waking the room (see server/src/room.ts).
+const PING = '{"t":"ping"}';
+const HEARTBEAT_MS = 15000;
+const DEAD_MS = 40000; // nothing heard for this long: the socket is gone even if the browser has not noticed
+
+// One id per tab, kept across reloads so a reloaded page replaces its old entry instead of adding a twin.
+function tabId() {
+  try {
+    const saved = sessionStorage.getItem("tosstome:id");
+    if (saved && /^[0-9a-f]{16}$/.test(saved)) return saved;
+    const id = randomHex(8);
+    sessionStorage.setItem("tosstome:id", id);
+    return id;
+  } catch {
+    return randomHex(8);
+  }
+}
+
 function joinRoom(key, path) {
   if (rooms.has(key)) return;
-  const room = { ch: null, peers: [], left: false };
+  const room = { ch: null, peers: [], lastSeen: 0, retry: null, paused: false };
   rooms.set(key, room);
-  const connect = () => {
+  room.connect = () => {
+    clearTimeout(room.retry);
+    room.ch?.close();
     const ws = new WebSocket(`${location.origin.replace(/^http/, "ws")}/api/room/${path}?id=${me.id}&name=${encodeURIComponent(me.name)}`);
-    room.ch = channel(ws);
+    const ch = channel(ws);
+    let code = 0;
+    room.ch = ch;
+    room.lastSeen = Date.now();
+    ws.addEventListener("open", () => ch.send(PING), { once: true });
+    ws.addEventListener("close", (e) => (code = e.code), { once: true });
     (async () => {
       for (;;) {
-        const m = await room.ch.next();
-        if (m === null) break;
+        const m = await ch.next();
+        if (m === null || room.ch !== ch) break;
+        room.lastSeen = Date.now();
         if (m.t === "peers") {
           room.peers = m.peers;
           render();
@@ -59,13 +92,58 @@ function joinRoom(key, path) {
           else for (const fn of listeners.get(m.data.xfer) ?? []) fn(m.data);
         }
       }
+      if (room.ch !== ch) return; // replaced by a newer socket, or paused
+      room.ch = null;
       room.peers = [];
       render();
-      if (!room.left) setTimeout(connect, 2000);
+      // 4000: a tab with the same id took the slot (a duplicated tab copies sessionStorage), so take a new one.
+      if (code === 4000) me.id = randomHex(8);
+      room.retry = setTimeout(room.connect, code === 4000 ? 0 : 2000);
     })();
   };
-  connect();
+  // Pings the server; reconnects if the socket is closed or has gone quiet.
+  room.check = () => {
+    if (room.paused) return;
+    const ch = room.ch;
+    if (!ch || ch.raw.readyState !== WebSocket.OPEN || Date.now() - room.lastSeen > DEAD_MS) return room.connect();
+    ch.send(PING);
+  };
+  room.connect();
 }
+
+setInterval(() => {
+  for (const room of rooms.values()) room.check();
+}, HEARTBEAT_MS);
+
+// Phones freeze a page soon after it goes to the background, and its socket can then die without a close
+// event, leaving a device in everyone's list that never answers. So a phone leaves the rooms when hidden
+// (unless a transfer is being set up) and rejoins with a fresh socket when it comes back. Desktop tabs stay.
+const leavesWhenHidden = matchMedia("(pointer: coarse)").matches;
+const busy = () => sending.size > 0 || [...listeners.values()].some((set) => set.size > 0);
+function pause() {
+  if (!leavesWhenHidden || busy()) return;
+  for (const room of rooms.values()) {
+    room.paused = true;
+    clearTimeout(room.retry);
+    const ch = room.ch;
+    room.ch = null;
+    room.peers = [];
+    ch?.close();
+  }
+  render();
+}
+function resume() {
+  for (const room of rooms.values()) {
+    const wasPaused = room.paused;
+    room.paused = false;
+    // A page that was frozen cannot trust its socket; a fresh one costs one round trip.
+    if (wasPaused || Date.now() - room.lastSeen > HEARTBEAT_MS) room.connect();
+    else room.check();
+  }
+}
+document.addEventListener("visibilitychange", () => (document.visibilityState === "visible" ? resume() : pause()));
+addEventListener("pageshow", (e) => e.persisted && resume());
+addEventListener("online", resume);
 
 function signalTo(key, peerId, xfer) {
   return (data) => rooms.get(key)?.ch?.send({ t: "signal", to: peerId, data: { ...data, xfer } });
@@ -258,9 +336,13 @@ async function sendTo(key, peer, { files = [], text = null }) {
     setBusy(peer.id, 0);
     ui.status(`Waiting for ${name} to accept`);
     const answer = waitFor(xfer, (d) => d.kind === "accept" || d.kind === "decline", 120000);
-    send({ kind: "ask", files: offer.map((f) => ({ name: f.name, size: f.size, ...(f.text && { text: true }) })), from: me.name });
+    // A short message rides along in the ask itself, so accepting it needs no data connection at all.
+    // Receivers that do not know `body` reply without `got` and the message goes the usual way.
+    const inline = text !== null && !isAgent(peer) && JSON.stringify(text).length <= INLINE_MAX ? { body: text } : {};
+    send({ kind: "ask", files: offer.map((f) => ({ name: f.name, size: f.size, ...(f.text && { text: true }) })), from: me.name, ...inline });
     const reply = await answer;
     if (reply.kind === "decline") return ui.status(`${name} declined`, { state: "failed" });
+    if (reply.got === true && inline.body !== undefined) return ui.status("Sent", { state: "done" });
 
     let ch = null;
     let chunk = CHUNK;
@@ -316,8 +398,13 @@ function incoming(key, from, ask) {
     "close",
     () => {
       const send = signalTo(key, from, ask.xfer);
-      if (dialog.returnValue === "accept") receive(send, ask, { isMessage, total, count: files.length });
-      else send({ kind: "decline" });
+      if (dialog.returnValue !== "accept") send({ kind: "decline" });
+      else if (isMessage && typeof ask.body === "string") {
+        send({ kind: "accept", got: true });
+        const ui = transferRow(`Message from ${sender}`);
+        ui.status("Received", { state: "done" });
+        ui.addText(ask.body);
+      } else receive(send, ask, { isMessage, total, count: files.length });
     },
     { once: true },
   );
@@ -328,10 +415,19 @@ async function receive(send, ask, offer) {
   const name = shortName(ask.from);
   const ui = transferRow(offer.isMessage ? `Message from ${name}` : `${plural(offer.count, "file")} (${size(offer.total)}) from ${name}`);
   const abort = new AbortController();
+  let stopRelay = () => {};
   try {
-    const relay = waitFor(ask.xfer, (d) => d.kind === "relay" && /^[0-9a-f]{32}$/.test(d.sid), 120000).then((d) =>
-      openRelay(location.origin, d.sid, "r").then((ch) => ({ ch, path: "relay" })),
-    );
+    const relay = new Promise((resolve, reject) => {
+      const timer = setTimeout(() => done(new Error("no answer")), 120000);
+      const off = onXfer(ask.xfer, (d) => d.kind === "relay" && /^[0-9a-f]{32}$/.test(d.sid) && done(null, d.sid));
+      const done = (err, sid) => {
+        clearTimeout(timer);
+        off();
+        if (err) reject(err);
+        else resolve(openRelay(location.origin, sid, "r").then((ch) => ({ ch, path: "relay" })));
+      };
+      stopRelay = () => done(new Error("direct won"));
+    });
     const direct = openDataChannel({ initiator: false, send, subscribe: (fn) => onXfer(ask.xfer, fn), timeoutMs: 15000, signal: abort.signal }).then(
       ({ dc }) => ({ ch: channel(dc), path: "direct" }),
     );
@@ -339,6 +435,7 @@ async function receive(send, ask, offer) {
     ui.status("Connecting...");
     const { ch, path } = await Promise.any([direct, relay]);
     if (path === "relay") abort.abort();
+    else stopRelay();
     ui.status("Receiving", { path });
     const results = await receiveFiles(ch, {
       onOffer: () => true,
